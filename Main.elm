@@ -4,13 +4,13 @@ import Debug
 import Math.Vector2 as V2
 
 -- MODEL
-type Mario = { x:Float, y:Float, vx:Float, vy:Float, dir:String }
+type Mario = { x:Float, y:Float, vx:Float, vy:Float, dir:String, tethered:Bool }
 type Point = { x:Float, y:Float, w:Float, h:Float, len: Float }
 type Game = { mario:Mario, point:Point }
 
 defaultGame : Game
 defaultGame =
-  { mario = { x=150, y=100, vx=0, vy=0, dir="right" },
+  { mario = { x=150, y=100, vx=0, vy=0, dir="right", tethered=False },
     point = { x=0, y=10, w=10, h=10, len = 100 } }
 
 
@@ -21,9 +21,13 @@ jump {y} m  = if y > 0 && m.y == 0 then { m | vy <- 5 } else m
 gravity : Float -> Mario -> Mario
 gravity t m = { m | vy <- m.vy - t/4 }
 
+attachTether : Bool -> Mario -> Mario
+attachTether teth m = if teth then { m | tethered <- True } else m
+
 -- assume tethered, else do physics
 tether : Float -> Point -> Mario -> Mario
-tether t p m = let dist = distance (m.x, m.y) (p.x, p.y)
+tether t p m = if m.tethered then
+               let dist = distance (m.x, m.y) (p.x, p.y)
                    _ = Debug.log "m" m
                    mPos = V2.vec2 (Debug.log "origMX" m.x) (Debug.log "origMY" m.y)
                    pPos = V2.vec2 (Debug.log "origPX" p.x) (Debug.log "origPY" p.y)
@@ -38,6 +42,7 @@ tether t p m = let dist = distance (m.x, m.y) (p.x, p.y)
                    fPX = V2.getX finalPos
                    fPY = V2.getY finalPos
                in Debug.log "fM" { m | x <- fPX, y <- fPY, vx <- (fPX - p.x)/t, vy <- (fPY - p.y)/t }
+               else m
 
 physics : Float -> Mario -> Mario
 physics t m = { m | x <- m.x + t*m.vx , y <- m.y + t*m.vy }
@@ -51,8 +56,8 @@ walk {x} m  = { m | vx <- toFloat x
 distance : (Float,Float) -> (Float,Float) -> Float
 distance (x1,y1) (x2,y2) = sqrt ((x1-x2)^2 + (y1-y2)^2)
 
-step : (Float,{ x:Int, y:Int }) -> Game -> Game
-step (t,dir) {mario,point} = { mario = mario |> jump dir |> walk dir |> gravity t |> physics t |> tether t point, point = point}
+step : (Float,({ x:Int, y:Int }, Bool)) -> Game -> Game
+step (t,(dir,teth)) {mario,point} = { mario = mario |> attachTether teth |> jump dir |> walk dir |> gravity t |> physics t |> tether t point, point = point}
 
 -- DISPLAY
 render : (Int,Int) -> Game -> Element
@@ -77,8 +82,8 @@ render (w',h') {mario,point} =
       ]
 
 -- MARIO
-input : Signal (Float,{ x:Int, y:Int })
+input : Signal (Float,({ x:Int, y:Int }, Bool))
 input = let delta = lift (\t -> t/20) (fps 24)
-        in sampleOn delta (lift2 (,) delta Keyboard.arrows)
+        in sampleOn delta (lift2 (,) delta <| lift2 (,) Keyboard.arrows Keyboard.space)
 
 main  = lift2 render Window.dimensions (foldp step defaultGame input)
